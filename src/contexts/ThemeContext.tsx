@@ -1,0 +1,69 @@
+import { createContext, useContext, useEffect, useState } from 'react';
+
+type Theme = 'light' | 'dark' | 'auto';
+
+interface ThemeContextType {
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
+  resolvedTheme: 'light' | 'dark';
+}
+
+const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const [theme, setThemeState] = useState<Theme>(() => {
+    // Load theme from localStorage or default to 'auto'
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('allergen-aware-theme') as Theme;
+      return stored || 'auto';
+    }
+    return 'auto';
+  });
+
+  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('light');
+
+  // Determine the actual theme to apply
+  useEffect(() => {
+    const applyTheme = (themeToApply: 'light' | 'dark') => {
+      const root = window.document.documentElement;
+      root.classList.remove('light', 'dark');
+      root.classList.add(themeToApply);
+      setResolvedTheme(themeToApply);
+    };
+
+    if (theme === 'auto') {
+      // Use system preference
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      const systemTheme = mediaQuery.matches ? 'dark' : 'light';
+      applyTheme(systemTheme);
+
+      // Listen for system theme changes
+      const listener = (e: MediaQueryListEvent) => {
+        applyTheme(e.matches ? 'dark' : 'light');
+      };
+      mediaQuery.addEventListener('change', listener);
+      return () => mediaQuery.removeEventListener('change', listener);
+    } else {
+      applyTheme(theme);
+    }
+  }, [theme]);
+
+  const setTheme = (newTheme: Theme) => {
+    setThemeState(newTheme);
+    localStorage.setItem('allergen-aware-theme', newTheme);
+  };
+
+  return (
+    <ThemeContext.Provider value={{ theme, setTheme, resolvedTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  );
+}
+
+export function useTheme() {
+  const context = useContext(ThemeContext);
+  if (context === undefined) {
+    throw new Error('useTheme must be used within a ThemeProvider');
+  }
+  return context;
+}
