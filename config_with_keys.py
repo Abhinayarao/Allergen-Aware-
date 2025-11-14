@@ -2,19 +2,18 @@
 # Copy these values to your .env file
 
 ENV_CONTENT = """
-# Supabase Configuration
-SUPABASE_URL=https://hawkjasruzxwjcmsjvvg.supabase.co
-SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhhd2tqYXNydXp4d2pjbXNqdnZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAxMjE4MzQsImV4cCI6MjA3NTY5NzgzNH0.gZfLAucCk58fzspTu-MqEFqpZFQ-eueKdD5Bjwk-WCE
+# Firebase Configuration
+FIREBASE_PROJECT_ID=allergen-aware-ad181
+FIREBASE_API_KEY=AIzaSyD2zGtY3Z0NqTq-0f7aTqQmZ40bMm4F-kE
+FIREBASE_SERVICE_ACCOUNT_FILE=path/to/serviceAccountKey.json
+# FIREBASE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
 
 # FatSecret API Configuration
-FATSECRET_KEY=3ac956f1edf044f3a36a002a54bacc46
-FATSECRET_SECRET=3ac956f1edf044f3a36a002a54bacc46
+FATSECRET_KEY=2747207f22504521a277070984144066
+FATSECRET_SECRET=10670465502257543049
 
 # Google Gemini AI Configuration
-GEMINI_KEY=AIzaSyBKsopQBX7BFoPfRY0hWzbNU-A9clPnzKo
-
-# JWT Secret (for token signing)
-JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+GEMINI_KEY=AIzaSyBbGdLs-a-i03XHnYcAjm3lB2e1vV43Bw0
 
 # Environment
 ENVIRONMENT=development

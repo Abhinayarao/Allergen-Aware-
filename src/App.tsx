@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Settings } from 'lucide-react';
 import { ShieldUtensilIcon } from './components/ShieldUtensilIcon';
 import { Navigation } from './components/Navigation';
@@ -11,8 +11,8 @@ import { FavoritesPage } from './components/FavoritesPage';
 import { CameraScanPage } from './components/CameraScanPage';
 import { SettingsPage } from './components/SettingsPage';
 import { LanguageSwitcher } from './components/LanguageSwitcher';
-// Supabase Edge Function usage removed; using FastAPI via src/lib/api
-import { toast } from 'sonner@2.0.3';
+// Firebase replaces the earlier Supabase Edge interactions; backend via FastAPI in src/lib/api
+import { toast } from 'sonner';
 import { Toaster } from './components/ui/sonner';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
@@ -86,13 +86,39 @@ function AppContent() {
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
 
   // Auth token presence indicates authenticated state
-  const [accessToken] = useState<string | null>(() => localStorage.getItem('access_token'));
+  const getStoredToken = () => localStorage.getItem('access_token');
+  const sessionExpiryHandledRef = useRef(false);
+
+  const handleUnauthorized = async (message?: string) => {
+    if (sessionExpiryHandledRef.current) return;
+    sessionExpiryHandledRef.current = true;
+
+    try {
+      const { setAccessToken } = await import('./lib/api');
+      setAccessToken(null);
+    } catch (importError) {
+      console.error('Failed to reset access token', importError);
+    }
+
+    localStorage.removeItem('access_token');
+    setUserProfile({ name: '', allergens: [] });
+    setTempProfile({});
+    setHasCompletedOnboarding(false);
+    setHistory([]);
+    setCurrentResult(null);
+    setCurrentPage((prev) => (prev === 'login' || prev === 'register' ? prev : 'login'));
+    toast.error(message || 'Session expired. Please log in again.');
+
+    setTimeout(() => {
+      sessionExpiryHandledRef.current = false;
+    }, 500);
+  };
 
   // Load user profile and history on mount
   useEffect(() => {
     loadUserProfile();
     loadHistory();
-    
+
     // Hide splash screen after 2 seconds
     const timer = setTimeout(() => {
       setShowSplash(false);
@@ -103,20 +129,31 @@ function AppContent() {
   // Check onboarding status after loading profile
   useEffect(() => {
     if (!showSplash) {
-      if (!localStorage.getItem('access_token')) {
-        setCurrentPage('login');
-      } else if (hasCompletedOnboarding && userProfile.name) {
-        setCurrentPage('home');
+      const token = getStoredToken();
+
+      if (!token) {
+        setCurrentPage((prev) => (prev === 'login' || prev === 'register' ? prev : 'login'));
+        return;
+      }
+
+      if (hasCompletedOnboarding && userProfile.name) {
+        setCurrentPage((prev) => (prev === 'home' ? prev : 'home'));
       } else {
-        setCurrentPage('welcome');
+        setCurrentPage((prev) => (prev === 'welcome' ? prev : 'welcome'));
       }
     }
-  }, [showSplash, hasCompletedOnboarding]);
+  }, [showSplash, hasCompletedOnboarding, userProfile.name]);
 
   const loadUserProfile = async () => {
+    const token = getStoredToken();
+    if (!token) {
+      setCurrentPage((prev) => (prev === 'login' || prev === 'register' ? prev : 'login'));
+      return;
+    }
+
     try {
       const { getProfile, getAllergens } = await import('./lib/api');
-      const [profileData, allergenData] = await Promise.all([getProfile().catch(() => null), getAllergens().catch(() => null)]);
+      const [profileData, allergenData] = await Promise.all([getProfile(), getAllergens()]);
 
       const allergens: string[] = [];
       if (allergenData) {
@@ -153,20 +190,42 @@ function AppContent() {
         });
         setHasCompletedOnboarding(Boolean(profileData.name));
       }
-    } catch {}
+    } catch (error: any) {
+      const message = String(error?.message || '');
+      if (message.includes('Invalid token') || message.includes('401')) {
+        await handleUnauthorized();
+        return;
+      } else {
+        console.error('Error loading profile:', error);
+      }
+    }
   };
 
   const loadHistory = async () => {
+    const token = getStoredToken();
+    if (!token) return;
+
     try {
       const { getHistory } = await import('./lib/api');
       const data = await getHistory();
       setHistory(data || []);
-    } catch {}
+    } catch (error: any) {
+      const message = String(error?.message || '');
+      if (message.includes('Invalid token') || message.includes('401')) {
+        await handleUnauthorized();
+      }
+    }
   };
 
   const saveUserProfile = async (profile: UserProfile) => {
     setIsSaving(true);
     try {
+      const token = getStoredToken();
+      if (!token) {
+        await handleUnauthorized();
+        return false;
+      }
+
       const { updateProfile, updateAllergens } = await import('./lib/api');
       await updateProfile({ name: profile.name, age: profile.age, gender: profile.gender });
 
@@ -191,9 +250,14 @@ function AppContent() {
       setHasCompletedOnboarding(true);
       toast.success('Profile saved successfully!');
       return true;
-    } catch (error) {
-      console.error('Error saving profile:', error);
-      toast.error('Failed to save profile. Please try again.');
+    } catch (error: any) {
+      const message = String(error?.message || '');
+      if (message.includes('Invalid token') || message.includes('401')) {
+        await handleUnauthorized();
+      } else {
+        console.error('Error saving profile:', error);
+        toast.error('Failed to save profile. Please try again.');
+      }
       return false;
     } finally {
       setIsSaving(false);
@@ -222,6 +286,18 @@ function AppContent() {
 
   const handleSaveSettings = async (updatedProfile: UserProfile) => {
     await saveUserProfile(updatedProfile);
+  };
+
+  const handleLogout = () => {
+    // Clear access token
+    localStorage.removeItem('access_token');
+    // Reset state
+    setUserProfile({ name: '', allergens: [] });
+    setHasCompletedOnboarding(false);
+    setHistory([]);
+    // Navigate to login
+    setCurrentPage('login');
+    toast.success('Logged out successfully');
   };
 
   const handleAnalyze = async (data: { method: string; value: string | File }) => {
@@ -356,6 +432,9 @@ function AppContent() {
     setCurrentPage('results');
   };
 
+  const storedToken = getStoredToken();
+  const isAuthPage = currentPage === 'login' || currentPage === 'register';
+
   // Splash Screen
   if (showSplash) {
     return (
@@ -369,6 +448,17 @@ function AppContent() {
           <p className="text-white">Eat Smart. Stay Safe. Powered by AI.</p>
         </div>
       </div>
+    );
+  }
+
+  if (!storedToken && !isAuthPage) {
+    return (
+      <>
+        <Toaster position="top-center" />
+        <Login onSuccess={async () => {
+          await loadUserProfile();
+        }} onNavigateRegister={() => setCurrentPage('register')} />
+      </>
     );
   }
 
@@ -407,7 +497,10 @@ function AppContent() {
     return (
       <>
         <Toaster position="top-center" />
-        <Login onSuccess={() => setCurrentPage('welcome')} onNavigateRegister={() => setCurrentPage('register')} />
+        <Login onSuccess={async () => {
+          await loadUserProfile();
+          // Navigation will be handled by useEffect based on profile state
+        }} onNavigateRegister={() => setCurrentPage('register')} />
       </>
     );
   }
@@ -416,7 +509,10 @@ function AppContent() {
     return (
       <>
         <Toaster position="top-center" />
-        <Register onSuccess={() => setCurrentPage('welcome')} onNavigateLogin={() => setCurrentPage('login')} />
+        <Register onSuccess={async () => {
+          await loadUserProfile();
+          // Navigation will be handled by useEffect based on profile state
+        }} onNavigateLogin={() => setCurrentPage('login')} />
       </>
     );
   }

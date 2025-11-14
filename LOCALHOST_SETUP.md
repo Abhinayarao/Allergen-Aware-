@@ -48,12 +48,13 @@ The frontend will be available at: **http://localhost:3000**
 ### Backend Configuration
 The `.env` file has been created from `env.example`. You may need to update:
 - `FATSECRET_SECRET`: Get from https://platform.fatsecret.com/api/
-- `JWT_SECRET`: Set to a secure random string
+- `FIREBASE_*`: Project ID, API key, and service account path/JSON
 
 ### Database Setup
-1. Go to https://supabase.com/dashboard/project/hawkjasruzxwjcmsjvvg
-2. Navigate to **SQL Editor**
-3. Copy and run the contents of `database_setup.sql`
+1. Go to https://console.firebase.google.com/
+2. Select your Firebase project (or create one) and enable **Firestore** in Native mode
+3. Download a service account key (JSON) and configure the `FIREBASE_*` variables in `.env`
+4. Review Firestore security rules to ensure authenticated access
 
 ## 📍 Access Points
 
@@ -80,7 +81,7 @@ curl "http://localhost:8000/api/v1/foods/search?query=chicken&max_results=5"
 2. **Install frontend dependencies**: `npm install`
 3. **Start the frontend**: `npm run dev`
 4. **Update .env file** with your FatSecret consumer secret
-5. **Set up the Supabase database** by running the SQL setup
+5. **Configure Firebase** by enabling Firestore and adding your service account keys to `.env`
 
 ## 🐳 Alternative: Use Docker
 

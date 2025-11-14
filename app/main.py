@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import os
 from dotenv import load_dotenv
 
-from .auth import supabase_client
+from .firebase import get_firestore_client
 from .routes import users, foods, scan
 
 # Load environment variables
@@ -14,12 +14,13 @@ load_dotenv()
 async def lifespan(app: FastAPI):
     # Startup
     print("Starting Allergen-Aware Recipe Advisor API...")
-    # Test Supabase connection
+    # Test Firebase connection
     try:
-        response = supabase_client.table('users').select('*').limit(1).execute()
-        print("✅ Supabase connection successful")
+        db = get_firestore_client()
+        list(db.collections())  # Trigger a simple request
+        print("SUCCESS: Firebase connection successful")
     except Exception as e:
-        print(f"❌ Supabase connection failed: {e}")
+        print(f"ERROR: Firebase connection failed: {e}")
     
     yield
     
@@ -29,7 +30,7 @@ async def lifespan(app: FastAPI):
 # Initialize FastAPI app
 app = FastAPI(
     title="Allergen-Aware Recipe Advisor API",
-    description="A FastAPI backend for food allergen analysis using Supabase, FatSecret, and Gemini AI",
+    description="A FastAPI backend for food allergen analysis using Firebase, FatSecret, and Gemini AI",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -43,10 +44,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(users.router, prefix="/api/v1", tags=["users"])
-app.include_router(foods.router, prefix="/api/v1", tags=["foods"])
-app.include_router(scan.router, prefix="/api/v1", tags=["scan"])
+# Include routers with versioned prefixes
+app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
+app.include_router(foods.router, prefix="/api/v1/foods", tags=["foods"])
+app.include_router(scan.router, prefix="/api/v1/scan", tags=["scan"])
 
 @app.get("/")
 async def root():

@@ -3,11 +3,10 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import base64
 import io
 from typing import Optional
-import jwt
 
 from ..services.fatsecret import fatsecret_service
 from ..services.gemini import gemini_service
-from ..auth import get_supabase_client
+from ..firebase import get_firestore_client, get_firebase_auth
 from ..models.food import ScanResponse, FoodDetails, BarcodeScanRequest, VoiceInputRequest
 from ..models.allergen import AllergenAnalysis
 
@@ -15,25 +14,26 @@ router = APIRouter()
 security = HTTPBearer()
 
 def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
-    """Extract user ID from JWT token."""
+    """Validate Firebase ID token and return the user ID."""
+    token = credentials.credentials
     try:
-        payload = jwt.decode(credentials.credentials, options={"verify_signature": False})
-        user_id = payload.get("sub")
+        auth_client = get_firebase_auth()
+        decoded = auth_client.verify_id_token(token)
+        user_id = decoded.get("uid")
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token")
         return user_id
-    except jwt.PyJWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail="Invalid token") from exc
 
 async def get_user_allergens(user_id: str) -> dict:
     """Get user's allergen profile."""
-    supabase = get_supabase_client()
+    db = get_firestore_client()
     try:
-        response = supabase.table("allergen_profiles").select("*").eq("user_id", user_id).execute()
-        if response.data:
-            return response.data[0]
-        else:
-            return {}  # Return empty dict if no allergen profile
+        doc = db.collection("allergen_profiles").document(user_id).get()
+        if doc.exists:
+            return doc.to_dict() or {}
+        return {}
     except Exception:
         return {}
 

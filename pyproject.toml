@@ -1,0 +1,15 @@
+[project]
+name = "allergen-aware-recipe-advisor-backend"
+version = "0.0.1"
+description = "FastAPI backend for the Allergen-Aware Recipe Advisor"
+readme = "README_BACKEND.md"
+requires-python = ">=3.8"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["app"]
+package-dir = {"" = "."}
+

@@ -10,16 +10,17 @@ from pathlib import Path
 def create_env_file():
     """Create .env file with the provided API keys."""
     
-    # Your API keys
-    SUPABASE_URL = "https://hawkjasruzxwjcmsjvvg.supabase.co"
-    SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhhd2tqYXNydXp4d2pjbXNqdnZnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MDEyMTgzNCwiZXhwIjoyMDc1Njk3ODM0fQ.EVBNpbyiPyNgMTTyJ8A76rggRGtkftpWTSeWv04urno"
-    FATSECRET_KEY = "3ac956f1edf044f3a36a002a54bacc46"
-    GEMINI_KEY = "AIzaSyBKsopQBX7BFoPfRY0hWzbNU-A9clPnzKo"
+    # Placeholder API keys
+    FATSECRET_KEY = "your-fatsecret-consumer-key"
+    GEMINI_KEY = "your-google-gemini-api-key"
     
     # Environment configuration
-    env_content = f"""# Supabase Configuration
-SUPABASE_URL={SUPABASE_URL}
-SUPABASE_KEY={SUPABASE_KEY}
+    env_content = f"""# Firebase Configuration
+FIREBASE_PROJECT_ID=your-firebase-project-id
+FIREBASE_API_KEY=your-firebase-web-api-key
+# Provide ONE of the following service account options:
+FIREBASE_SERVICE_ACCOUNT_FILE=path/to/serviceAccountKey.json
+# FIREBASE_SERVICE_ACCOUNT_JSON={{"type":"service_account",...}}
 
 # FatSecret API Configuration
 FATSECRET_KEY={FATSECRET_KEY}
@@ -27,9 +28,6 @@ FATSECRET_SECRET=your-fatsecret-consumer-secret
 
 # Google Gemini AI Configuration
 GEMINI_KEY={GEMINI_KEY}
-
-# JWT Secret (for token signing)
-JWT_SECRET=your-jwt-secret-key-change-this-in-production
 
 # Environment
 ENVIRONMENT=development
@@ -56,10 +54,11 @@ def main():
     if create_env_file():
         print("\n🎉 Environment setup completed!")
         print("\nNext steps:")
-        print("1. Get your FatSecret consumer secret from: https://platform.fatsecret.com/api/Default.aspx?screen=app")
-        print("2. Update the FATSECRET_SECRET in your .env file")
-        print("3. Run the database setup SQL in your Supabase project")
-        print("4. Start the server with: python run.py")
+        print("1. Download your Firebase service account JSON from the Firebase console")
+        print("2. Update the Firebase variables in your .env file (project id, API key, service account)")
+        print("3. Get your FatSecret consumer secret from: https://platform.fatsecret.com/api/Default.aspx?screen=app")
+        print("4. Update the FATSECRET_SECRET in your .env file")
+        print("5. Start the server with: python run.py")
         print("\n📚 Documentation will be available at:")
         print("   - API Docs: http://localhost:8000/docs")
         print("   - ReDoc: http://localhost:8000/redoc")

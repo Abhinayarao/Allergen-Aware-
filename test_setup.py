@@ -5,7 +5,6 @@ import pytest
 import asyncio
 from fastapi.testclient import TestClient
 from app.main import app
-from app.auth import get_supabase_client
 from app.services.fatsecret import FatSecretService
 from app.services.gemini import GeminiService
 
@@ -22,61 +21,6 @@ def event_loop():
 def client():
     """Create a test client for the FastAPI application."""
     return TestClient(app)
-
-
-@pytest.fixture
-def mock_supabase():
-    """Mock Supabase client for testing."""
-    class MockSupabase:
-        def __init__(self):
-            self.auth = MockAuth()
-            self.table = lambda name: MockTable()
-    
-    class MockAuth:
-        def sign_up(self, **kwargs):
-            return MockResponse(user=MockUser())
-        
-        def sign_in_with_password(self, **kwargs):
-            return MockResponse(
-                user=MockUser(),
-                session=MockSession()
-            )
-        
-        def sign_out(self):
-            return {"message": "Signed out"}
-    
-    class MockUser:
-        def __init__(self):
-            self.id = "test-user-id"
-            self.email = "test@example.com"
-    
-    class MockSession:
-        def __init__(self):
-            self.access_token = "test-access-token"
-            self.refresh_token = "test-refresh-token"
-    
-    class MockResponse:
-        def __init__(self, **kwargs):
-            for key, value in kwargs.items():
-                setattr(self, key, value)
-    
-    class MockTable:
-        def select(self, *args):
-            return self
-        
-        def eq(self, *args):
-            return self
-        
-        def insert(self, data):
-            return MockResponse(data=[data])
-        
-        def update(self, data):
-            return MockResponse(data=[data])
-        
-        def execute(self):
-            return MockResponse(data=[])
-    
-    return MockSupabase()
 
 
 @pytest.fixture

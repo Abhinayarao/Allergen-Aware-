@@ -1,22 +1,23 @@
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings
 from typing import Optional
 
 class Settings(BaseSettings):
-    # Supabase Configuration
-    SUPABASE_URL: str
-    SUPABASE_KEY: str
-    
+    # Firebase Configuration
+    FIREBASE_PROJECT_ID: str = ""
+    FIREBASE_API_KEY: str = ""
+    FIREBASE_SERVICE_ACCOUNT_FILE: Optional[str] = None
+    FIREBASE_SERVICE_ACCOUNT_JSON: Optional[str] = None
+
     # FatSecret API Configuration
-    FATSECRET_KEY: str
-    FATSECRET_SECRET: str
-    
+    FATSECRET_KEY: str = ""
+    FATSECRET_SECRET: str = ""
+
     # Google Gemini AI Configuration
-    GEMINI_KEY: str
-    
-    # JWT Configuration
-    JWT_SECRET: str = "your-secret-key"
-    JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRE_MINUTES: int = 30
+    GEMINI_KEY: str = ""
+
+    # Server Configuration
+    HOST: str = "0.0.0.0"
+    PORT: int = 8000
     
     # Environment
     ENVIRONMENT: str = "development"
@@ -25,6 +26,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"
 
 # Create settings instance
 settings = Settings()

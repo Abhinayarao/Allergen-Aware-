@@ -10,6 +10,8 @@ import aiofiles
 import os
 from datetime import datetime
 
+from ..firebase import get_firestore_client
+
 
 def decode_base64_audio(audio_base64: str) -> bytes:
     """
@@ -227,10 +229,6 @@ async def save_scan_to_history(
     Returns:
         Scan ID
     """
-    from ..auth import get_supabase_client
-    
-    supabase = get_supabase_client()
-    
     scan_data = {
         'user_id': user_id,
         'scan_type': scan_type,
@@ -238,12 +236,14 @@ async def save_scan_to_history(
         'food_name': food_data.get('food_name', 'Unknown'),
         'scan_data': food_data,
         'analysis_result': analysis_result,
-        'created_at': datetime.utcnow().isoformat()
+        'created_at': datetime.utcnow()
     }
     
     try:
-        response = supabase.table('food_scans').insert(scan_data).execute()
-        return response.data[0]['id']
+        db = get_firestore_client()
+        doc_ref = db.collection('food_scans').document()
+        doc_ref.set(scan_data)
+        return doc_ref.id
     except Exception as e:
         print(f"Failed to save scan history: {e}")
         return ""

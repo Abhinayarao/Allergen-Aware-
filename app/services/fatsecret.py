@@ -16,9 +16,31 @@ class FatSecretService:
         self.api_key = os.getenv("FATSECRET_KEY")
         self.api_secret = os.getenv("FATSECRET_SECRET")
         self.base_url = "https://platform.fatsecret.com/rest/server.api"
-        
+        self._warned_missing_credentials = False
+
         if not self.api_key or not self.api_secret:
-            raise ValueError("FATSECRET_KEY and FATSECRET_SECRET must be set in environment variables")
+            self._warn_missing_credentials()
+
+    def _warn_missing_credentials(self):
+        if not self._warned_missing_credentials:
+            print(
+                "WARNING: FATSECRET_KEY/FATSECRET_SECRET are not configured. "
+                "FatSecret-dependent features will fail until credentials are provided."
+            )
+            self._warned_missing_credentials = True
+
+    def _ensure_credentials(self):
+        if not self.api_key or not self.api_secret:
+            # Refresh from environment in case credentials were added after startup
+            self.api_key = os.getenv("FATSECRET_KEY")
+            self.api_secret = os.getenv("FATSECRET_SECRET")
+
+        if not self.api_key or not self.api_secret:
+            self._warn_missing_credentials()
+            raise RuntimeError(
+                "FatSecret API credentials are missing. Set FATSECRET_KEY and "
+                "FATSECRET_SECRET environment variables to enable this feature."
+            )
     
     def _generate_oauth_signature(self, method: str, url: str, params: Dict[str, Any]) -> str:
         """Generate OAuth 1.0 signature for FatSecret API."""
@@ -43,6 +65,8 @@ class FatSecretService:
     
     def _make_request(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """Make a request to the FatSecret API with proper OAuth 1.0 signing."""
+        self._ensure_credentials()
+
         # Add OAuth parameters
         oauth_params = {
             'oauth_consumer_key': self.api_key,

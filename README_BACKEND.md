@@ -1,10 +1,10 @@
 # Allergen-Aware Recipe Advisor - FastAPI Backend
 
-A comprehensive FastAPI backend for food allergen analysis using Supabase, FatSecret API, and Google Gemini AI.
+A comprehensive FastAPI backend for food allergen analysis using Firebase, FatSecret API, and Google Gemini AI.
 
 ## Features
 
-- **User Authentication**: Supabase Auth integration with JWT tokens
+- **User Authentication**: Firebase Authentication integration with ID tokens
 - **Food Search**: FatSecret API integration for food database queries
 - **Allergen Analysis**: Google Gemini AI for intelligent allergen risk assessment
 - **Multiple Scan Methods**: Image, barcode, and voice input support
@@ -17,7 +17,7 @@ A comprehensive FastAPI backend for food allergen analysis using Supabase, FatSe
 ```
 app/
 ├── main.py                 # FastAPI app initialization
-├── auth.py                 # Supabase authentication client
+├── firebase.py             # Firebase initialization helpers
 ├── config.py               # Environment configuration
 ├── routes/
 │   ├── users.py           # User registration, login, profile management
@@ -39,9 +39,11 @@ app/
 Create a `.env` file in the project root with the following variables:
 
 ```env
-# Supabase Configuration
-SUPABASE_URL=https://your-supabase-project-url.supabase.co
-SUPABASE_KEY=your-supabase-service-role-key
+# Firebase Configuration
+FIREBASE_PROJECT_ID=your-firebase-project-id
+FIREBASE_API_KEY=your-firebase-web-api-key
+FIREBASE_SERVICE_ACCOUNT_FILE=path/to/serviceAccountKey.json
+# FIREBASE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
 
 # FatSecret API Configuration
 FATSECRET_KEY=your-fatsecret-consumer-key
@@ -50,16 +52,20 @@ FATSECRET_SECRET=your-fatsecret-consumer-secret
 # Google Gemini AI Configuration
 GEMINI_KEY=your-google-genai-api-key
 
-# JWT Secret (for token signing)
-JWT_SECRET=your-jwt-secret-key
-
 # Environment
 ENVIRONMENT=development
 ```
 
 ### 2. Database Setup
 
-Run the SQL commands in `database_setup.sql` in your Supabase SQL editor to create the necessary tables and policies.
+In the Firebase console:
+
+1. Enable **Firestore** in Native mode.
+2. Create the following collections when the application runs for the first time (they will be created automatically):
+   - `user_profiles`
+   - `allergen_profiles`
+   - `food_scans`
+3. Review Firestore security rules to ensure authenticated access is enforced for your environment.
 
 ### 3. Install Dependencies
 
@@ -109,11 +115,11 @@ Once the server is running, visit:
 
 ## Key Features
 
-### 1. Supabase Integration
-- User authentication and authorization
-- Row Level Security (RLS) policies
-- Automatic user profile creation
-- Secure data storage
+### 1. Firebase Integration
+- User authentication and authorization with Firebase Auth
+- Firestore NoSQL database for profiles, allergens, and history
+- Automatic user profile initialisation
+- Secure data storage with Firestore security rules
 
 ### 2. FatSecret API Integration
 - Food search by name
@@ -189,7 +195,6 @@ docker run -p 8000:8000 --env-file .env allergen-advisor-api
 
 - FatSecret API: 1000 requests/day (free tier)
 - Gemini AI: Based on your Google Cloud quota
-- Supabase: Based on your plan limits
 
 ## Monitoring and Logging
 

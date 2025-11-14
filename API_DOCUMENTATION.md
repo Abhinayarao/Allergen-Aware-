@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Allergen-Aware Recipe Advisor API is a comprehensive FastAPI backend that provides food allergen analysis using Supabase, FatSecret API, and Google Gemini AI. The API supports multiple input methods (image, barcode, voice) and provides intelligent allergen risk assessment.
+The Allergen-Aware Recipe Advisor API is a comprehensive FastAPI backend that provides food allergen analysis using Firebase, FatSecret API, and Google Gemini AI. The API supports multiple input methods (image, barcode, voice) and provides intelligent allergen risk assessment.
 
 ## Base URL
 
@@ -340,7 +340,7 @@ Content-Type: application/json
 
 - **FatSecret API**: 1000 requests/day (free tier)
 - **Gemini AI**: Based on your Google Cloud quota
-- **Supabase**: Based on your plan limits
+- **Firebase**: Firestore/Authentication quotas depend on your Google Cloud plan
 
 ## Data Models
 

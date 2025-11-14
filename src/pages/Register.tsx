@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card } from '../components/ui/card';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { registerUser, loginUser, setAccessToken } from '../lib/api';
 
 interface RegisterProps {
@@ -68,6 +68,22 @@ export default function Register({ onSuccess, onNavigateLogin }: RegisterProps) 
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

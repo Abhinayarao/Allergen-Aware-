@@ -153,7 +153,7 @@ def main():
         print("🎉 Setup completed successfully!")
         print("\nNext steps:")
         print("1. Update your .env file with actual API keys")
-        print("2. Run the database setup SQL in your Supabase project")
+        print("2. Configure Firebase Firestore and service account credentials")
         print("3. Start the server with: python run.py")
     else:
         print("⚠️  Setup completed with warnings!")

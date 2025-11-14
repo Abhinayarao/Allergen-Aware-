@@ -43,3 +43,15 @@ class UserProfileUpdate(BaseModel):
     phone: Optional[str] = None
     date_of_birth: Optional[str] = None
     emergency_contact: Optional[str] = None
+    name: Optional[str] = None  # For frontend compatibility
+    age: Optional[str] = None   # For frontend compatibility
+    gender: Optional[str] = None  # For frontend compatibility
+
+class HistoryEntry(BaseModel):
+    id: str
+    user_id: str
+    analysis: dict  # Store the full analysis result
+    timestamp: datetime
+    
+    class Config:
+        from_attributes = True

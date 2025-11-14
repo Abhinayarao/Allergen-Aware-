@@ -3,7 +3,7 @@
 ## ✅ Your API Keys Are Configured!
 
 Your environment is now set up with the following API keys:
-- ✅ **Supabase**: Connected to your project
+- ✅ **Firebase**: Project configuration in place
 - ✅ **Google Gemini AI**: Ready for allergen analysis
 - ⚠️ **FatSecret**: You need to get your consumer secret
 
@@ -19,12 +19,13 @@ Your environment is now set up with the following API keys:
    FATSECRET_SECRET=your-actual-consumer-secret-here
    ```
 
-### 2. Set Up Your Supabase Database
+### 2. Finish Your Firebase Configuration
 
-1. Go to your Supabase project: https://supabase.com/dashboard/project/hawkjasruzxwjcmsjvvg
-2. Navigate to **SQL Editor**
-3. Copy and paste the contents of `database_setup.sql`
-4. Click **Run** to execute the SQL
+1. Open the Firebase console: https://console.firebase.google.com/
+2. Enable **Firestore** in Native mode for your project
+3. Generate a service account JSON key and store it securely (update `FIREBASE_SERVICE_ACCOUNT_FILE` or `FIREBASE_SERVICE_ACCOUNT_JSON` in `.env`)
+4. Copy the Firebase Web API key into both `.env` and `env.example` (`FIREBASE_API_KEY`, `VITE_FIREBASE_API_KEY` if the frontend needs it)
+5. Review Firestore security rules to restrict reads/writes to authenticated users
 
 ### 3. Start the API Server
 
@@ -146,9 +147,9 @@ fetch('http://localhost:8000/api/v1/foods/search?query=chicken')
    - Make sure your `.env` file exists and has all required keys
    - Check that you've added your FatSecret consumer secret
 
-2. **"Supabase connection failed"**
-   - Verify your Supabase URL and key are correct
-   - Make sure you've run the database setup SQL
+2. **"Firebase connection failed"**
+   - Verify your Firebase service account credentials and project ID
+   - Ensure the service account has access to Firestore and the database is enabled
 
 3. **"FatSecret API request failed"**
    - Check your FatSecret key and secret
@@ -168,7 +169,7 @@ LOG_LEVEL=debug python run.py
 ## 📚 Next Steps
 
 1. **Get your FatSecret consumer secret** (required for food search)
-2. **Set up your Supabase database** (run the SQL setup)
+2. **Complete Firebase configuration** (Firestore + service account in `.env`)
 3. **Test the API endpoints** using the documentation
 4. **Integrate with your frontend** using the API endpoints
 
