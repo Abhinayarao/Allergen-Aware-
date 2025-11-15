@@ -1,11 +1,18 @@
 
   # Allergen-Aware Recipe Advisor
 
-  This is a code bundle for Allergen-Aware Recipe Advisor. The original project is available at https://www.figma.com/design/27CJGMcPfW3Ibj5qZwDpoZ/Allergen-Aware-Recipe-Advisor.
+AI-powered nutrition assistant that identifies allergens in foods using image & text input.
 
-  ## Running the code
+Built using FastAPI + React (Vite) + Supabase + Gemini AI + FatSecret.
+# Features
 
-  Run `npm i` to install the dependencies.
+Image-based allergen detection using Gemini AI
 
-  Run `npm run dev` to start the development server.
+Nutrition + ingredient lookup via FatSecret API
+
+AI-powered allergen analysis
+
+User registration and login (JWT auth)
+
+Save personal allergen preferences
   
