@@ -208,7 +208,15 @@ function AppContent() {
     try {
       const { getHistory } = await import('./lib/api');
       const data = await getHistory();
-      setHistory(data || []);
+      
+      // Sort history by timestamp (most recent first)
+      const sortedHistory = (data || []).sort((a: HistoryEntry, b: HistoryEntry) => {
+        const dateA = new Date(a.timestamp).getTime();
+        const dateB = new Date(b.timestamp).getTime();
+        return dateB - dateA; // Most recent first
+      });
+      
+      setHistory(sortedHistory);
     } catch (error: any) {
       const message = String(error?.message || '');
       if (message.includes('Invalid token') || message.includes('401')) {
@@ -346,15 +354,32 @@ function AppContent() {
           nutrition: null,
         } as any;
         const res = await analyzeFood(foodDetails);
+        
+        // Transform alternative_suggestions to the expected format
+        const alternativeDishes = (res.alternative_suggestions || [])
+          .filter((suggestion: any) => suggestion && (typeof suggestion === 'string' ? suggestion.trim() : (suggestion.name || suggestion).trim()))
+          .map((suggestion: string | { name?: string; reason?: string }) => {
+            if (typeof suggestion === 'string') {
+              return {
+                name: suggestion.trim(),
+                reason: 'A safer alternative option'
+              };
+            }
+            return {
+              name: (suggestion.name || String(suggestion)).trim(),
+              reason: suggestion.reason || 'A safer alternative option'
+            };
+          });
+        
         result = {
           dishName: res.food_name || String(data.value),
           explanation: res.analysis_details || 'AI-based allergen analysis',
           detectedAllergens: res.detected_allergens || res.detectedAllergens || [],
           substitutions: res.substitutions || [],
-          alternativeDishes: res.alternative_suggestions || [],
+          alternativeDishes: alternativeDishes,
           riskyIngredients: res.risk_factors || [],
-          verdict: (res.is_safe ? 'SAFE' : (res.risk_level === 'high' ? 'UNSAFE' : 'RISKY')),
-          confidence: Math.round((res.confidence_score || 0.7) * 100),
+          verdict: (res.is_safe === true ? 'SAFE' : (res.risk_level === 'high' ? 'UNSAFE' : 'RISKY')),
+          confidence: Math.round((typeof res.confidence_score === 'number' ? res.confidence_score : parseFloat(res.confidence_score) || 0.7) * 100),
         };
       }
 
@@ -370,8 +395,14 @@ function AppContent() {
 
       setCurrentResult(result);
 
-      // Save to history
-      await addHistory({ analysis: result });
+      // Save to history with timestamp
+      const historyEntry = {
+        analysis: {
+          ...result,
+          timestamp: new Date().toISOString(),
+        }
+      };
+      await addHistory(historyEntry);
 
       // Reload history
       loadHistory();

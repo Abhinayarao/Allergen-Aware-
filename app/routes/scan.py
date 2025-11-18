@@ -231,8 +231,29 @@ async def analyze_food_allergens(
 ):
     """Analyze a food item for allergen risks."""
     try:
+        from ..services.prompt_builder import prompt_builder_service
+        from ..models.food import NutritionInfo
+        
         # Get user's allergen profile
         user_allergens = await get_user_allergens(user_id)
+        
+        # Enrich food information with ingredients if missing
+        # This is the key improvement: automatically fetch ingredients
+        if not food_details.ingredients or len(food_details.ingredients) == 0:
+            print(f"Enriching food '{food_details.food_name}' with ingredients from FatSecret...")
+            enriched_info = await prompt_builder_service.enrich_food_with_ingredients(
+                food_details.food_name
+            )
+            
+            # Update food_details with enriched information
+            food_details.ingredients = enriched_info.get("ingredients", [])
+            
+            # Update nutrition if missing and we got it from FatSecret
+            if not food_details.nutrition and enriched_info.get("nutrition"):
+                nutrition_data = enriched_info["nutrition"]
+                food_details.nutrition = NutritionInfo(**nutrition_data)
+            
+            print(f"Enriched ingredients: {food_details.ingredients}")
         
         # Prepare food information for analysis
         food_info = {
@@ -241,20 +262,93 @@ async def analyze_food_allergens(
             "nutrition": food_details.nutrition.dict() if food_details.nutrition else {}
         }
         
-        # Analyze using Gemini AI
-        analysis_result = await gemini_service.analyze_allergens(user_allergens, food_info)
+        # Analyze using Gemini AI with retry logic
+        # This uses the new analyze_allergens_with_retry method which:
+        # 1. Tries with full structured prompt
+        # 2. Retries with simplified prompt if blocked
+        analysis_result = await gemini_service.analyze_allergens_with_retry(
+            user_allergens, 
+            food_info
+        )
+        
+        # Ensure is_safe is a proper boolean
+        is_safe_value = analysis_result.get("is_safe", True)
+        if isinstance(is_safe_value, str):
+            is_safe_value = is_safe_value.lower() in ("true", "1", "yes")
+        elif not isinstance(is_safe_value, bool):
+            is_safe_value = bool(is_safe_value)
+        
+        # Ensure confidence_score is a float
+        confidence_value = analysis_result.get("confidence_score", 0.5)
+        if isinstance(confidence_value, str):
+            try:
+                confidence_value = float(confidence_value)
+            except ValueError:
+                confidence_value = 0.5
+        elif not isinstance(confidence_value, (int, float)):
+            confidence_value = 0.5
+        
+        # Ensure analysis_details is a clean string (not raw JSON)
+        analysis_details_value = analysis_result.get("analysis_details", "")
+        if isinstance(analysis_details_value, dict):
+            # If it's a dict, convert to string (shouldn't happen, but handle it)
+            import json
+            analysis_details_value = json.dumps(analysis_details_value)
+        elif isinstance(analysis_details_value, str):
+            # If analysis_details contains raw JSON (starts with {), extract just the text
+            if analysis_details_value.strip().startswith('{'):
+                # Try to parse it and extract just the analysis_details field
+                try:
+                    import json
+                    parsed_json = json.loads(analysis_details_value)
+                    if isinstance(parsed_json, dict) and "analysis_details" in parsed_json:
+                        analysis_details_value = parsed_json["analysis_details"]
+                    else:
+                        # If it's the full response JSON, create a summary instead
+                        risk_factors = parsed_json.get("risk_factors", [])
+                        detected = parsed_json.get("detected_allergens", [])
+                        if detected:
+                            analysis_details_value = f"Potential allergens detected: {', '.join(detected)}."
+                        elif risk_factors:
+                            analysis_details_value = ". ".join(risk_factors[:2])
+                        else:
+                            analysis_details_value = "Please review ingredients carefully for potential allergens."
+                except:
+                    # If parsing fails, use a default message
+                    analysis_details_value = "Analysis completed. Please review the detailed results."
+        
+        # Ensure alternative_suggestions are provided if not safe
+        alternative_suggestions = analysis_result.get("alternative_suggestions", [])
+        if not is_safe_value and not alternative_suggestions:
+            alternative_suggestions = [
+                "Ask the restaurant/chef about allergen-free options",
+                "Request modifications to remove allergens",
+                "Consider preparing a similar dish at home with safe ingredients"
+            ]
+        
+        # Ensure recommendations are provided
+        recommendations = analysis_result.get("recommendations", [])
+        if not recommendations:
+            if not is_safe_value:
+                recommendations = [
+                    "Avoid this dish or ask about ingredient substitutions",
+                    "Check with the chef about preparation methods",
+                    "Consider safer alternatives listed below"
+                ]
+            else:
+                recommendations = ["This dish appears safe, but always double-check ingredients when dining out"]
         
         # Convert to AllergenAnalysis model
         allergen_analysis = AllergenAnalysis(
             food_name=food_details.food_name,
-            is_safe=analysis_result.get("is_safe", True),
+            is_safe=is_safe_value,
             risk_level=analysis_result.get("risk_level", "low"),
             detected_allergens=analysis_result.get("detected_allergens", []),
             risk_factors=analysis_result.get("risk_factors", []),
-            recommendations=analysis_result.get("recommendations", []),
-            alternative_suggestions=analysis_result.get("alternative_suggestions", []),
-            confidence_score=analysis_result.get("confidence_score", 0.5),
-            analysis_details=analysis_result.get("analysis_details", "")
+            recommendations=recommendations,
+            alternative_suggestions=alternative_suggestions,
+            confidence_score=float(confidence_value),
+            analysis_details=str(analysis_details_value)
         )
         
         return allergen_analysis
