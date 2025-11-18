@@ -28,7 +28,7 @@ class NutritionInfo(BaseModel):
     serving_unit: Optional[str] = None
 
 class FoodDetails(BaseModel):
-    food_id: str
+    food_id: Optional[str] = None
     food_name: str
     brand_name: Optional[str] = None
     food_type: Optional[str] = None

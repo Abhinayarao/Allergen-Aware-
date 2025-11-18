@@ -3,6 +3,7 @@ import json
 from typing import Dict, Any, List
 from dotenv import load_dotenv
 import google.generativeai as genai
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 load_dotenv()
 
@@ -15,7 +16,7 @@ class GeminiService:
         
         # Configure the Gemini API
         genai.configure(api_key=self.api_key)
-        self.model = genai.GenerativeModel('gemini-pro')
+        self.model = genai.GenerativeModel('gemini-2.5-flash')
     
     async def analyze_allergens(self, user_allergens: Dict[str, Any], food_info: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze food for allergen risks using Gemini AI."""
@@ -24,6 +25,15 @@ class GeminiService:
         prompt = self._create_analysis_prompt(user_allergens, food_info)
         
         try:
+            # Configure safety settings to allow health/allergen analysis
+            # Set all categories to BLOCK_NONE since this is a legitimate health use case
+            safety_settings = {
+                HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,  # Changed to allow health content
+            }
+            
             # Generate content using Gemini
             response = self.model.generate_content(
                 prompt,
@@ -32,13 +42,46 @@ class GeminiService:
                     top_k=32,
                     top_p=1,
                     max_output_tokens=1024,
-                )
+                ),
+                safety_settings=safety_settings
             )
             
-            if response.text:
-                return self._parse_analysis_response(response.text)
-            else:
-                raise Exception("No valid response from Gemini API")
+            # Check response candidates and finish reason
+            if not response.candidates:
+                raise Exception("No candidates in response - may have been blocked")
+            
+            candidate = response.candidates[0]
+            
+            # Check finish reason
+            if hasattr(candidate, 'finish_reason'):
+                if candidate.finish_reason == 2 or candidate.finish_reason == genai.types.FinishReason.SAFETY:
+                    # Response was blocked by safety filters
+                    return {
+                        "is_safe": False,
+                        "risk_level": "medium",
+                        "detected_allergens": [],
+                        "risk_factors": ["Analysis blocked by safety filters"],
+                        "recommendations": ["Please manually review ingredients and consult a healthcare professional"],
+                        "alternative_suggestions": [],
+                        "confidence_score": 0.3,
+                        "analysis_details": "The AI analysis was blocked. Please review ingredients manually for allergens."
+                    }
+            
+            # Try to get text from response
+            try:
+                text = response.text
+                if text:
+                    return self._parse_analysis_response(text)
+            except (ValueError, AttributeError) as e:
+                # If response.text fails, try alternative access
+                if hasattr(candidate, 'content') and candidate.content:
+                    if hasattr(candidate.content, 'parts') and candidate.content.parts:
+                        text = candidate.content.parts[0].text
+                        if text:
+                            return self._parse_analysis_response(text)
+                raise Exception(f"Response blocked or empty: {str(e)}")
+            
+            raise Exception("No valid response from Gemini API")
                 
         except Exception as e:
             raise Exception(f"Failed to analyze allergens: {e}")
@@ -60,8 +103,7 @@ class GeminiService:
         ingredients = food_info.get("ingredients", [])
         nutrition = food_info.get("nutrition", {})
         
-        prompt = f"""
-You are an expert food allergen analyst. Analyze the following food for potential allergen risks for a user with specific allergies.
+        prompt = f"""You are a food safety expert specializing in allergen identification. Please evaluate the following food item for potential allergen concerns.
 
 USER ALLERGIES: {', '.join(allergen_list) if allergen_list else 'None specified'}
 SEVERITY LEVEL: {user_allergens.get('severity_level', 'moderate')}
@@ -71,21 +113,21 @@ FOOD INFORMATION:
 - Ingredients: {', '.join(ingredients) if ingredients else 'Not specified'}
 - Nutrition: {json.dumps(nutrition, indent=2) if nutrition else 'Not available'}
 
-Please provide a comprehensive allergen analysis in the following JSON format:
+Please provide a comprehensive allergen evaluation in the following JSON format:
 {{
     "is_safe": true/false,
     "risk_level": "low/medium/high/critical",
     "detected_allergens": ["list of allergens found"],
-    "risk_factors": ["specific risk factors identified"],
+    "risk_factors": ["specific concerns identified"],
     "recommendations": ["specific recommendations for the user"],
     "alternative_suggestions": ["safer alternative foods"],
     "confidence_score": 0.0-1.0,
-    "analysis_details": "detailed explanation of the analysis"
+    "analysis_details": "detailed explanation of the evaluation"
 }}
 
 Consider:
 1. Direct allergen presence in ingredients
-2. Cross-contamination risks
+2. Cross-contamination possibilities
 3. Hidden allergens in processed foods
 4. Severity of the user's allergies
 5. Manufacturing processes that might introduce allergens
