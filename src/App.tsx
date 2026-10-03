@@ -21,6 +21,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 
 type Page = 'welcome' | 'profile-setup' | 'allergen-setup' | 'login' | 'register' | 'home' | 'results' | 'history' | 'scan' | 'settings';
+type Verdict = 'SAFE' | 'RISKY' | 'UNSAFE' | 'UNCERTAIN';
 
 interface UserProfile {
   name: string;
@@ -31,7 +32,7 @@ interface UserProfile {
 
 interface AnalysisResult {
   dishName: string;
-  verdict: 'SAFE' | 'RISKY' | 'UNSAFE';
+  verdict: Verdict;
   confidence: number;
   detectedAllergens: string[];
   riskyIngredients: string[];
@@ -55,6 +56,7 @@ interface AnalysisResult {
 }
 
 interface HistoryEntry extends AnalysisResult {
+  // verdict inherited from AnalysisResult (includes UNCERTAIN)
   id: string;
   timestamp: string;
 }
@@ -62,16 +64,6 @@ interface HistoryEntry extends AnalysisResult {
 function AppContent() {
   const { t } = useLanguage();
   const [currentPage, setCurrentPage] = useState<Page>('welcome');
-  const [userId] = useState(() => {
-    // Generate or retrieve user ID from localStorage
-    let id = localStorage.getItem('allergen-aware-user-id');
-    if (!id) {
-      id = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      localStorage.setItem('allergen-aware-user-id', id);
-    }
-    return id;
-  });
-
   const [userProfile, setUserProfile] = useState<UserProfile>({
     name: '',
     allergens: [],
@@ -208,15 +200,7 @@ function AppContent() {
     try {
       const { getHistory } = await import('./lib/api');
       const data = await getHistory();
-      
-      // Sort history by timestamp (most recent first)
-      const sortedHistory = (data || []).sort((a: HistoryEntry, b: HistoryEntry) => {
-        const dateA = new Date(a.timestamp).getTime();
-        const dateB = new Date(b.timestamp).getTime();
-        return dateB - dateA; // Most recent first
-      });
-      
-      setHistory(sortedHistory);
+      setHistory(data || []);
     } catch (error: any) {
       const message = String(error?.message || '');
       if (message.includes('Invalid token') || message.includes('401')) {
@@ -354,55 +338,42 @@ function AppContent() {
           nutrition: null,
         } as any;
         const res = await analyzeFood(foodDetails);
-        
-        // Transform alternative_suggestions to the expected format
-        const alternativeDishes = (res.alternative_suggestions || [])
-          .filter((suggestion: any) => suggestion && (typeof suggestion === 'string' ? suggestion.trim() : (suggestion.name || suggestion).trim()))
-          .map((suggestion: string | { name?: string; reason?: string }) => {
-            if (typeof suggestion === 'string') {
-              return {
-                name: suggestion.trim(),
-                reason: 'A safer alternative option'
-              };
-            }
-            return {
-              name: (suggestion.name || String(suggestion)).trim(),
-              reason: suggestion.reason || 'A safer alternative option'
-            };
-          });
-        
+        const riskLevel: string = res.risk_level || 'low';
+        const isVague: boolean = res.vague_ingredients_detected || false;
+        let verdict: Verdict;
+        if (riskLevel === 'uncertain' || isVague) {
+          verdict = 'UNCERTAIN';
+        } else if (res.is_safe) {
+          verdict = 'SAFE';
+        } else if (riskLevel === 'high' || riskLevel === 'critical') {
+          verdict = 'UNSAFE';
+        } else {
+          verdict = 'RISKY';
+        }
         result = {
           dishName: res.food_name || String(data.value),
           explanation: res.analysis_details || 'AI-based allergen analysis',
-          detectedAllergens: res.detected_allergens || res.detectedAllergens || [],
+          detectedAllergens: res.detected_allergens || [],
           substitutions: res.substitutions || [],
-          alternativeDishes: alternativeDishes,
+          alternativeDishes: (res.alternative_suggestions || []).map((s: any) =>
+            typeof s === 'string' ? { name: s, reason: '' } : s
+          ),
           riskyIngredients: res.risk_factors || [],
-          verdict: (res.is_safe === true ? 'SAFE' : (res.risk_level === 'high' ? 'UNSAFE' : 'RISKY')),
-          confidence: Math.round((typeof res.confidence_score === 'number' ? res.confidence_score : parseFloat(res.confidence_score) || 0.7) * 100),
-        };
-      }
-
-      // Add some mock nutrition data if not present
-      if (!result.nutrition) {
-        result.nutrition = {
-          calories: Math.floor(Math.random() * 400) + 200,
-          protein: Math.floor(Math.random() * 30) + 10,
-          carbs: Math.floor(Math.random() * 50) + 20,
-          fat: Math.floor(Math.random() * 20) + 5,
+          verdict,
+          confidence: Math.round((res.confidence_score || 0.7) * 100),
+          nutrition: res.nutrition ? {
+            calories: res.nutrition.calories || 0,
+            protein: res.nutrition.protein || 0,
+            carbs: res.nutrition.carbs || 0,
+            fat: res.nutrition.fat || 0,
+          } : undefined,
         };
       }
 
       setCurrentResult(result);
 
-      // Save to history with timestamp
-      const historyEntry = {
-        analysis: {
-          ...result,
-          timestamp: new Date().toISOString(),
-        }
-      };
-      await addHistory(historyEntry);
+      // Save to history
+      await addHistory({ analysis: result });
 
       // Reload history
       loadHistory();
@@ -411,23 +382,11 @@ function AppContent() {
       toast.success('Analysis complete!');
     } catch (error) {
       console.error('Error analyzing:', error);
-      const errorMessage = error.message || 'Unknown error';
+      const errorMessage = (error as Error).message || 'Unknown error';
       toast.error(`Analysis failed: ${errorMessage}`);
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const base64 = (reader.result as string).split(',')[1];
-        resolve(base64);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
   };
 
   const handleDeleteHistoryEntry = async (entryId: string) => {

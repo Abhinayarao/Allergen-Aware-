@@ -4,7 +4,20 @@ from ..services.fatsecret import fatsecret_service
 
 class PromptBuilderService:
     """Service to build safe and structured prompts for Gemini AI."""
-    
+
+    VAGUE_TERMS = [
+        "natural flavoring", "natural flavors", "natural flavor",
+        "artificial flavors", "artificial flavoring", "artificial flavor",
+        "spices", "seasoning", "flavorings", "natural and artificial",
+        "may contain", "traces of", "processed in a facility",
+        "derived from", "hydrolyzed", "extract", "concentrate",
+        "modified starch", "modified food starch",
+    ]
+
+    def has_vague_ingredients(self, ingredients: List[str]) -> bool:
+        text = " ".join(ingredients).lower()
+        return any(term in text for term in self.VAGUE_TERMS)
+
     # Static mappings for common dishes (fallback if FatSecret doesn't have ingredients)
     COMMON_DISH_INGREDIENTS = {
         "butter chicken": ["chicken", "butter", "tomato", "cream", "onion", "garlic", "ginger", "spices", "yogurt"],
@@ -134,11 +147,16 @@ class PromptBuilderService:
         food_name = food_info.get("food_name", "Unknown food")
         ingredients = food_info.get("ingredients", [])
         nutrition = food_info.get("nutrition", {})
-        
-        if simplified:
-            # Simplified prompt - conversational and human-like
-            prompt = f"""Explain if this food is safe for someone with allergies. If it's risky, explain the reasons clearly in natural language. Mention specific allergens and ingredients that could be a concern. Keep it short, clear, and friendly.
+        vague = self.has_vague_ingredients(ingredients)
+        vague_note = (
+            '\nNOTE: This food contains vague ingredient terms (e.g., "natural flavoring", "spices", "may contain"). '
+            'Set risk_level to "uncertain" and start analysis_details with "Uncertain — verify manually." '
+            'because hidden allergens cannot be confirmed from vague labels.'
+        ) if vague else ""
 
+        if simplified:
+            prompt = f"""Explain if this food is safe for someone with allergies. If it's risky, explain the reasons clearly in natural language. Mention specific allergens and ingredients that could be a concern. Keep it short, clear, and friendly.
+{vague_note}
 Food: {food_name}
 Ingredients: {', '.join(ingredients) if ingredients else 'not listed'}
 Allergies to check: {', '.join(allergen_list) if allergen_list else 'none'}
@@ -147,20 +165,19 @@ IMPORTANT: Respond ONLY in valid JSON format. Do NOT use markdown code blocks (n
 
 {{
     "is_safe": true/false,
-    "risk_level": "low/medium/high",
+    "risk_level": "low/medium/high/uncertain",
     "detected_allergens": [],
     "risk_factors": [],
     "recommendations": [],
     "alternative_suggestions": [],
     "confidence_score": 0.0-1.0,
-    "analysis_details": "Write a short, friendly explanation in plain English. If unsafe, mention specific allergens and ingredients. Example: 'This dish contains potential allergens like gluten and celery. These ingredients are commonly found in spice blends. Please avoid this dish if you're sensitive to these allergens.'"
+    "analysis_details": "Write a short, friendly explanation. If vague ingredients exist, start with: Uncertain — verify manually. If unsafe, mention specific allergens."
 }}
 
-Important: If the food is NOT safe, you MUST suggest at least 2-3 alternative dishes or modifications that would be safer. Do NOT include code blocks or JSON formatting in the analysis_details text."""
+If the food is NOT safe, suggest at least 2-3 alternative dishes in alternative_suggestions. Do NOT include code blocks or JSON in analysis_details."""
         else:
-            # Full structured prompt - conversational and human-like
             prompt = f"""Explain if this food is safe for someone with allergies. If it's risky, explain the reasons clearly in natural language. Mention specific allergens and any ingredients that could be a concern. Keep it short, clear, and friendly.
-
+{vague_note}
 The person has these allergies: {', '.join(allergen_list) if allergen_list else 'none'}
 Their allergy severity: {user_allergens.get('severity_level', 'moderate')}
 
@@ -172,24 +189,21 @@ IMPORTANT: Respond ONLY in valid JSON format. Do NOT use markdown code blocks (n
 
 {{
     "is_safe": true/false,
-    "risk_level": "low/medium/high/critical",
+    "risk_level": "low/medium/high/critical/uncertain",
     "detected_allergens": ["list specific allergens found"],
     "risk_factors": ["explain specific concerns in plain English"],
     "recommendations": ["give practical, friendly advice"],
     "alternative_suggestions": ["suggest 2-3 safer alternatives or modifications"],
     "confidence_score": 0.0-1.0,
-    "analysis_details": "Write a short, friendly explanation in plain English. If unsafe, mention the specific allergens and ingredients that are a concern. Example: 'This dish contains potential allergens like gluten and celery. These ingredients are commonly found in spice blends and sauces. Please avoid this dish if you're sensitive to these allergens.'"
+    "analysis_details": "Write a short, friendly explanation in plain English. If vague ingredients exist, start with: Uncertain — verify manually. If unsafe, mention the specific allergens and ingredients."
 }}
 
 Guidelines for analysis_details:
 - Write naturally, like you're talking to a friend
-- Use plain English - avoid medical jargon and code formatting
-- If risky: Mention specific allergens (e.g., "gluten", "celery", "dairy") and ingredients that contain them
+- If vague ingredients detected: Start with "Uncertain — verify manually." then explain why
+- If risky: Mention specific allergens (e.g., "gluten", "dairy") and which ingredients contain them
 - Keep it short (2-3 sentences max)
-- Be clear and friendly
 - If safe: Briefly explain why it's safe
-
-Example good response: "This dish contains potential allergens like gluten and celery. These ingredients are commonly found in spice blends and sauces. Please avoid this dish if you're sensitive to these allergens."
 
 Do NOT include code blocks, markdown formatting, or JSON syntax in the analysis_details text."""
         

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CheckCircle, AlertCircle, Trash2, Calendar } from 'lucide-react';
+import { CheckCircle, AlertCircle, Trash2, Calendar, Camera, Barcode, Search } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
@@ -8,10 +8,30 @@ import { useLanguage } from '../contexts/LanguageContext';
 interface HistoryEntry {
   id: string;
   dishName: string;
-  verdict: 'SAFE' | 'RISKY' | 'UNSAFE';
+  verdict: 'SAFE' | 'RISKY' | 'UNSAFE' | 'UNCERTAIN';
   timestamp: string;
   confidence: number;
   detectedAllergens: string[];
+  ingredients?: string[];
+  riskyIngredients?: string[];
+  substitutions?: Array<{
+    original: string;
+    replacement: string;
+    reason: string;
+  }>;
+  alternativeDishes?: Array<{
+    name: string;
+    reason: string;
+  }>;
+  explanation?: string;
+  nutrition?: {
+    calories: number;
+    protein: number;
+    carbs: number;
+    fat: number;
+  };
+  imageUrl?: string;
+  scanType?: string; // 'image' | 'barcode' | 'search'
 }
 
 interface FavoritesPageProps {
@@ -53,6 +73,13 @@ export function FavoritesPage({
       bgColor: 'bg-red-50 dark:bg-red-950',
       borderColor: 'border-red-200 dark:border-red-800',
       badge: 'bg-red-500 dark:bg-red-600',
+    },
+    UNCERTAIN: {
+      icon: AlertCircle,
+      color: 'text-gray-600 dark:text-gray-400',
+      bgColor: 'bg-gray-50 dark:bg-gray-900',
+      borderColor: 'border-gray-300 dark:border-gray-700',
+      badge: 'bg-gray-500 dark:bg-gray-600',
     },
   };
 
@@ -137,6 +164,25 @@ export function FavoritesPage({
             {filteredHistory.map((entry) => {
               const config = verdictConfig[entry.verdict];
               const Icon = config.icon;
+              
+              // Determine dot color based on verdict
+              const isSafe = entry.verdict === 'SAFE';
+              const dotColor = isSafe ? 'bg-green-500' : 'bg-red-500';
+              
+              // Get scan type icon and label
+              const getScanTypeInfo = (scanType?: string) => {
+                switch (scanType) {
+                  case 'image':
+                    return { icon: Camera, label: 'Image', color: 'bg-blue-500' };
+                  case 'barcode':
+                    return { icon: Barcode, label: 'Barcode', color: 'bg-purple-500' };
+                  default:
+                    return { icon: Search, label: 'Search', color: 'bg-gray-500' };
+                }
+              };
+              
+              const scanTypeInfo = getScanTypeInfo(entry.scanType);
+              const ScanTypeIcon = scanTypeInfo.icon;
 
               return (
                 <Card
@@ -145,13 +191,25 @@ export function FavoritesPage({
                   onClick={() => onViewDetails(entry)}
                 >
                   <div className="flex items-start gap-4">
-                    <div className={`${config.bgColor} p-3 rounded-lg`}>
-                      <Icon className={`w-6 h-6 ${config.color}`} />
+                    {/* Colored dot indicator */}
+                    <div className="flex flex-col items-center gap-2 pt-1">
+                      <div className={`w-4 h-4 rounded-full ${dotColor} shrink-0`} title={isSafe ? 'Safe' : 'Unsafe'} />
                     </div>
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-3 mb-2">
-                        <h3 className="text-foreground truncate">{entry.dishName}</h3>
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <h3 className="text-foreground truncate font-semibold">{entry.dishName}</h3>
+                          {/* Scan type badge */}
+                          <Badge 
+                            variant="secondary" 
+                            className={`${scanTypeInfo.color} text-white text-xs shrink-0 flex items-center gap-1 px-2 py-0.5`}
+                          >
+                            <ScanTypeIcon className="w-3 h-3" />
+                            {scanTypeInfo.label}
+                          </Badge>
+                        </div>
+                        {/* Safe/Unsafe tag */}
                         <Badge className={`${config.badge} text-white shrink-0`}>
                           {entry.verdict === 'RISKY' ? 'UNSAFE' : entry.verdict}
                         </Badge>

@@ -48,10 +48,13 @@ class AllergenProfileUpdate(BaseModel):
 class AllergenAnalysis(BaseModel):
     food_name: str
     is_safe: bool
-    risk_level: str  # low, medium, high, critical
+    risk_level: str  # low, medium, high, critical, uncertain
     detected_allergens: List[str]
     risk_factors: List[str]
     recommendations: List[str]
     alternative_suggestions: List[str]
     confidence_score: float  # 0.0 to 1.0
     analysis_details: str
+    ingredients: Optional[List[str]] = []
+    nutrition: Optional[dict] = None
+    vague_ingredients_detected: bool = False

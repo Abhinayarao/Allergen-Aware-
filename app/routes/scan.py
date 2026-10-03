@@ -1,30 +1,24 @@
-from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Form
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import base64
+import hashlib
 import io
+import json
+import os
 from typing import Optional
+
+from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Form
+import google.generativeai as genai
+from PIL import Image
 
 from ..services.fatsecret import fatsecret_service
 from ..services.gemini import gemini_service
-from ..firebase import get_firestore_client, get_firebase_auth
-from ..models.food import ScanResponse, FoodDetails, BarcodeScanRequest, VoiceInputRequest
+from ..firebase import get_firestore_client
+from ..models.food import ScanResponse, FoodDetails, BarcodeScanRequest, VoiceInputRequest, NutritionInfo
 from ..models.allergen import AllergenAnalysis
+from ..dependencies import get_current_user_id
+from ..utils.helpers import validate_image_file
+from ..services.prompt_builder import prompt_builder_service
 
 router = APIRouter()
-security = HTTPBearer()
-
-def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
-    """Validate Firebase ID token and return the user ID."""
-    token = credentials.credentials
-    try:
-        auth_client = get_firebase_auth()
-        decoded = auth_client.verify_id_token(token)
-        user_id = decoded.get("uid")
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        return user_id
-    except Exception as exc:
-        raise HTTPException(status_code=401, detail="Invalid token") from exc
 
 async def get_user_allergens(user_id: str) -> dict:
     """Get user's allergen profile."""
@@ -44,46 +38,103 @@ async def scan_image(
 ):
     """Scan an image to identify food and analyze for allergens."""
     try:
-        # Read the uploaded image
         image_data = await file.read()
-        
-        # For now, we'll simulate image recognition
-        # In production, you'd use a proper image recognition service
-        # This could be FatSecret's image recognition API or another ML service
-        
-        # Simulate food identification (replace with actual image recognition)
-        identified_food = {
-            "food_name": "Sample Food Item",
-            "ingredients": ["wheat flour", "eggs", "milk", "sugar"],
-            "nutrition": {
-                "calories": 250,
-                "protein": 8.5,
-                "carbohydrates": 35.2,
-                "fat": 9.1
-            }
-        }
-        
-        # Get user's allergen profile
-        user_allergens = await get_user_allergens(user_id)
-        
-        # Analyze for allergens using Gemini AI
-        analysis = await gemini_service.analyze_allergens(user_allergens, identified_food)
-        
-        # Create food details
-        food_details = FoodDetails(
-            food_id="image_scan_001",
-            food_name=identified_food["food_name"],
-            ingredients=identified_food["ingredients"],
-            nutrition=identified_food["nutrition"]
-        )
-        
-        return ScanResponse(
-            success=True,
-            food_details=food_details,
-            error_message=None
-        )
-        
+
+        if not validate_image_file(image_data):
+            return ScanResponse(
+                success=False,
+                food_details=None,
+                error_message="Invalid image file"
+            )
+
+        api_key = os.getenv("GEMINI_KEY")
+        if not api_key:
+            raise ValueError("GEMINI_KEY must be set in environment variables")
+
+        genai.configure(api_key=api_key)
+        vision_model = genai.GenerativeModel('gemini-2.5-flash')
+
+        image = Image.open(io.BytesIO(image_data))
+
+        vision_prompt = """Analyze this food image and provide the following information in JSON format:
+
+1. food_name: The name of the dish/food item (be specific, e.g., "Chicken Tikka Masala" not just "food")
+2. ingredients: A list of visible or likely ingredients based on what you can see (be comprehensive)
+3. description: A brief description of what you see
+
+Respond ONLY with valid JSON in this exact format (no markdown, no code blocks):
+{
+    "food_name": "specific dish name",
+    "ingredients": ["ingredient1", "ingredient2", "ingredient3"],
+    "description": "brief description"
+}"""
+
+        try:
+            response = vision_model.generate_content(
+                [vision_prompt, image],
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.3,
+                    top_k=32,
+                    top_p=1,
+                    max_output_tokens=1024,
+                )
+            )
+
+            response_text = response.text.strip()
+
+            if response_text.startswith("```json"):
+                response_text = response_text[7:]
+            if response_text.startswith("```"):
+                response_text = response_text[3:]
+            if response_text.endswith("```"):
+                response_text = response_text[:-3]
+            response_text = response_text.strip()
+
+            start_idx = response_text.find('{')
+            end_idx = response_text.rfind('}') + 1
+
+            if start_idx != -1 and end_idx > start_idx:
+                vision_result = json.loads(response_text[start_idx:end_idx])
+            else:
+                raise ValueError("No JSON found in response")
+
+            food_name = vision_result.get("food_name", "Unknown Food Item")
+            ingredients = vision_result.get("ingredients", [])
+            description = vision_result.get("description", "")
+
+            if not ingredients or food_name.lower() in ["unknown food item", "food", "dish", "unknown"]:
+                enriched_info = await prompt_builder_service.enrich_food_with_ingredients(food_name)
+                if enriched_info.get("ingredients"):
+                    ingredients = enriched_info["ingredients"]
+                if enriched_info.get("food_name") and food_name.lower() in ["unknown food item", "food", "dish", "unknown"]:
+                    food_name = enriched_info["food_name"]
+
+            food_details = FoodDetails(
+                food_id=f"image_scan_{hashlib.md5(food_name.encode()).hexdigest()[:8]}",
+                food_name=food_name,
+                ingredients=ingredients if ingredients else [],
+                nutrition=None,
+                food_description=description
+            )
+
+            return ScanResponse(
+                success=True,
+                food_details=food_details,
+                error_message=None
+            )
+
+        except Exception as vision_error:
+            import traceback
+            traceback.print_exc()
+            return ScanResponse(
+                success=False,
+                food_details=None,
+                error_message=f"Failed to analyze image: {str(vision_error)}"
+            )
+
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return ScanResponse(
             success=False,
             food_details=None,
@@ -153,11 +204,12 @@ async def scan_voice(
     try:
         text = voice_data.text
         
-        # If audio is provided, decode and transcribe (simplified)
         if voice_data.audio_base64 and not text:
-            # In production, you'd use a speech-to-text service like Google Speech-to-Text
-            # For now, we'll simulate transcription
-            text = "chicken sandwich"  # Simulated transcription
+            return ScanResponse(
+                success=False,
+                food_details=None,
+                error_message="Audio transcription is not yet supported. Please provide text input."
+            )
         
         if not text:
             return ScanResponse(
@@ -169,7 +221,7 @@ async def scan_voice(
         # Search for food using the transcribed text
         search_result = await fatsecret_service.search_foods(text, max_results=1)
         
-        if "foods" not in search_result or "food" not in search_result["foods"]:
+        if "foods" not in search_result or "food" not in search_result.get("foods", {}):
             return ScanResponse(
                 success=False,
                 food_details=None,
@@ -231,54 +283,29 @@ async def analyze_food_allergens(
 ):
     """Analyze a food item for allergen risks."""
     try:
-        from ..services.prompt_builder import prompt_builder_service
-        from ..models.food import NutritionInfo
-        
-        # Get user's allergen profile
         user_allergens = await get_user_allergens(user_id)
-        
-        # Enrich food information with ingredients if missing
-        # This is the key improvement: automatically fetch ingredients
-        if not food_details.ingredients or len(food_details.ingredients) == 0:
-            print(f"Enriching food '{food_details.food_name}' with ingredients from FatSecret...")
-            enriched_info = await prompt_builder_service.enrich_food_with_ingredients(
-                food_details.food_name
-            )
-            
-            # Update food_details with enriched information
+
+        if not food_details.ingredients:
+            enriched_info = await prompt_builder_service.enrich_food_with_ingredients(food_details.food_name)
             food_details.ingredients = enriched_info.get("ingredients", [])
-            
-            # Update nutrition if missing and we got it from FatSecret
             if not food_details.nutrition and enriched_info.get("nutrition"):
-                nutrition_data = enriched_info["nutrition"]
-                food_details.nutrition = NutritionInfo(**nutrition_data)
-            
-            print(f"Enriched ingredients: {food_details.ingredients}")
-        
-        # Prepare food information for analysis
+                food_details.nutrition = NutritionInfo(**enriched_info["nutrition"])
+
         food_info = {
             "food_name": food_details.food_name,
             "ingredients": food_details.ingredients or [],
             "nutrition": food_details.nutrition.dict() if food_details.nutrition else {}
         }
-        
-        # Analyze using Gemini AI with retry logic
-        # This uses the new analyze_allergens_with_retry method which:
-        # 1. Tries with full structured prompt
-        # 2. Retries with simplified prompt if blocked
-        analysis_result = await gemini_service.analyze_allergens_with_retry(
-            user_allergens, 
-            food_info
-        )
-        
-        # Ensure is_safe is a proper boolean
+
+        vague_detected = prompt_builder_service.has_vague_ingredients(food_details.ingredients or [])
+        analysis_result = await gemini_service.analyze_allergens_with_retry(user_allergens, food_info)
+
         is_safe_value = analysis_result.get("is_safe", True)
         if isinstance(is_safe_value, str):
             is_safe_value = is_safe_value.lower() in ("true", "1", "yes")
         elif not isinstance(is_safe_value, bool):
             is_safe_value = bool(is_safe_value)
-        
-        # Ensure confidence_score is a float
+
         confidence_value = analysis_result.get("confidence_score", 0.5)
         if isinstance(confidence_value, str):
             try:
@@ -287,37 +314,27 @@ async def analyze_food_allergens(
                 confidence_value = 0.5
         elif not isinstance(confidence_value, (int, float)):
             confidence_value = 0.5
-        
-        # Ensure analysis_details is a clean string (not raw JSON)
+
         analysis_details_value = analysis_result.get("analysis_details", "")
         if isinstance(analysis_details_value, dict):
-            # If it's a dict, convert to string (shouldn't happen, but handle it)
-            import json
             analysis_details_value = json.dumps(analysis_details_value)
-        elif isinstance(analysis_details_value, str):
-            # If analysis_details contains raw JSON (starts with {), extract just the text
-            if analysis_details_value.strip().startswith('{'):
-                # Try to parse it and extract just the analysis_details field
-                try:
-                    import json
-                    parsed_json = json.loads(analysis_details_value)
-                    if isinstance(parsed_json, dict) and "analysis_details" in parsed_json:
-                        analysis_details_value = parsed_json["analysis_details"]
+        elif isinstance(analysis_details_value, str) and analysis_details_value.strip().startswith('{'):
+            try:
+                parsed_json = json.loads(analysis_details_value)
+                if isinstance(parsed_json, dict) and "analysis_details" in parsed_json:
+                    analysis_details_value = parsed_json["analysis_details"]
+                else:
+                    detected = parsed_json.get("detected_allergens", [])
+                    risk_factors = parsed_json.get("risk_factors", [])
+                    if detected:
+                        analysis_details_value = f"Potential allergens detected: {', '.join(detected)}."
+                    elif risk_factors:
+                        analysis_details_value = ". ".join(risk_factors[:2])
                     else:
-                        # If it's the full response JSON, create a summary instead
-                        risk_factors = parsed_json.get("risk_factors", [])
-                        detected = parsed_json.get("detected_allergens", [])
-                        if detected:
-                            analysis_details_value = f"Potential allergens detected: {', '.join(detected)}."
-                        elif risk_factors:
-                            analysis_details_value = ". ".join(risk_factors[:2])
-                        else:
-                            analysis_details_value = "Please review ingredients carefully for potential allergens."
-                except:
-                    # If parsing fails, use a default message
-                    analysis_details_value = "Analysis completed. Please review the detailed results."
-        
-        # Ensure alternative_suggestions are provided if not safe
+                        analysis_details_value = "Please review ingredients carefully for potential allergens."
+            except Exception:
+                analysis_details_value = "Analysis completed. Please review the detailed results."
+
         alternative_suggestions = analysis_result.get("alternative_suggestions", [])
         if not is_safe_value and not alternative_suggestions:
             alternative_suggestions = [
@@ -325,8 +342,7 @@ async def analyze_food_allergens(
                 "Request modifications to remove allergens",
                 "Consider preparing a similar dish at home with safe ingredients"
             ]
-        
-        # Ensure recommendations are provided
+
         recommendations = analysis_result.get("recommendations", [])
         if not recommendations:
             if not is_safe_value:
@@ -337,21 +353,36 @@ async def analyze_food_allergens(
                 ]
             else:
                 recommendations = ["This dish appears safe, but always double-check ingredients when dining out"]
-        
-        # Convert to AllergenAnalysis model
-        allergen_analysis = AllergenAnalysis(
+
+        risk_level = analysis_result.get("risk_level", "low")
+        # Upgrade risk_level to uncertain if vague ingredients were detected and Gemini didn't already flag it
+        if vague_detected and risk_level not in ("uncertain", "high", "critical"):
+            risk_level = "uncertain"
+
+        nutrition_out = None
+        if food_details.nutrition:
+            n = food_details.nutrition
+            nutrition_out = {
+                "calories": n.calories or 0,
+                "protein": n.protein or 0,
+                "carbs": n.carbohydrates or 0,
+                "fat": n.fat or 0,
+            }
+
+        return AllergenAnalysis(
             food_name=food_details.food_name,
             is_safe=is_safe_value,
-            risk_level=analysis_result.get("risk_level", "low"),
+            risk_level=risk_level,
             detected_allergens=analysis_result.get("detected_allergens", []),
             risk_factors=analysis_result.get("risk_factors", []),
             recommendations=recommendations,
             alternative_suggestions=alternative_suggestions,
             confidence_score=float(confidence_value),
-            analysis_details=str(analysis_details_value)
+            analysis_details=str(analysis_details_value),
+            ingredients=food_details.ingredients or [],
+            nutrition=nutrition_out,
+            vague_ingredients_detected=vague_detected,
         )
-        
-        return allergen_analysis
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Allergen analysis failed: {str(e)}")

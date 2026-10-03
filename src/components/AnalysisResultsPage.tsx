@@ -8,7 +8,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 
 interface AnalysisResult {
   dishName: string;
-  verdict: 'SAFE' | 'RISKY' | 'UNSAFE';
+  verdict: 'SAFE' | 'RISKY' | 'UNSAFE' | 'UNCERTAIN';
   confidence: number;
   detectedAllergens: string[];
   riskyIngredients: string[];
@@ -63,6 +63,14 @@ export function AnalysisResultsPage({ result, onBack }: AnalysisResultsPageProps
       icon: AlertCircle,
       label: 'NOT SAFE',
     },
+    UNCERTAIN: {
+      color: 'bg-gray-500',
+      textColor: 'text-gray-700 dark:text-gray-300',
+      bgColor: 'bg-gray-50 dark:bg-gray-900',
+      borderColor: 'border-gray-300 dark:border-gray-700',
+      icon: AlertTriangle,
+      label: 'UNCERTAIN — VERIFY MANUALLY',
+    },
   };
 
   const config = verdictConfig[result.verdict];
@@ -78,7 +86,7 @@ export function AnalysisResultsPage({ result, onBack }: AnalysisResultsPageProps
           className="mb-4 hover:bg-accent"
         >
           <ChevronLeft className="w-5 h-5 mr-1" />
-          Back to Search
+          {t.common.back || 'Back'}
         </Button>
 
         {/* Dish Header with Image */}
@@ -151,7 +159,6 @@ export function AnalysisResultsPage({ result, onBack }: AnalysisResultsPageProps
           </Card>
         )}
 
-
         {/* Substitutions */}
         {result.substitutions.length > 0 && (
           <Card className="p-6 mb-6 bg-card border-border">
@@ -174,29 +181,21 @@ export function AnalysisResultsPage({ result, onBack }: AnalysisResultsPageProps
           </Card>
         )}
 
-        {/* Alternative Dishes - Show when unsafe/risky or when alternatives exist */}
-        {(result.verdict === 'UNSAFE' || result.verdict === 'RISKY' || result.alternativeDishes.length > 0) && (
+        {/* Alternative Dishes */}
+        {result.alternativeDishes.length > 0 && (
           <Card className="p-6 mb-6 bg-card border-border">
             <h2 className="text-foreground mb-4">{t.results.alternativeDishes}</h2>
-            {result.alternativeDishes.length > 0 ? (
-              <div className="space-y-3">
-                {result.alternativeDishes.map((dish, index) => (
-                  <div
-                    key={index}
-                    className="p-4 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-200 dark:border-blue-800"
-                  >
-                    <h3 className="text-foreground mb-1">{dish.name}</h3>
-                    <p className="text-sm text-muted-foreground">{dish.reason}</p>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="p-4 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-200 dark:border-blue-800">
-                <p className="text-foreground">
-                  Consider asking the restaurant about allergen-free options or request modifications to remove allergens from this dish.
-                </p>
-              </div>
-            )}
+            <div className="space-y-3">
+              {result.alternativeDishes.map((dish, index) => (
+                <div
+                  key={index}
+                  className="p-4 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-200 dark:border-blue-800"
+                >
+                  <h3 className="text-foreground mb-1">{dish.name}</h3>
+                  <p className="text-sm text-muted-foreground">{dish.reason}</p>
+                </div>
+              ))}
+            </div>
           </Card>
         )}
 
@@ -211,7 +210,7 @@ export function AnalysisResultsPage({ result, onBack }: AnalysisResultsPageProps
             onClick={onBack}
             className="flex-1 bg-green-500 hover:bg-green-600 text-white py-6 rounded-xl"
           >
-            Analyze Another Dish
+            {t.results.analyzeAnother || 'Analyze Another Dish'}
           </Button>
         </div>
       </div>
