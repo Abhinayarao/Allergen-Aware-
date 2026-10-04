@@ -68,6 +68,26 @@ class GeminiService:
                     except Exception as e4:
                         raise ValueError(f"Failed to initialize any Gemini model. Last error: {e4}")
     
+    async def transcribe_audio(self, audio_base64: str, mime_type: str = "audio/mp4") -> str:
+        """Transcribe audio to text using Gemini's multimodal capabilities."""
+        audio_part = {
+            "inline_data": {
+                "mime_type": mime_type,
+                "data": audio_base64
+            }
+        }
+        response = self.model.generate_content(
+            [
+                audio_part,
+                "Transcribe this audio accurately. The person is describing a food item they want to check for allergens. Return only the transcribed text, nothing else."
+            ],
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.0,
+                max_output_tokens=256,
+            )
+        )
+        return response.text.strip()
+
     async def analyze_allergens(self, user_allergens: Dict[str, Any], food_info: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze food for allergen risks using Gemini AI."""
         

@@ -100,11 +100,53 @@ export async function analyzeFood(foodDetails: any) {
   return apiPost('/scan/analyze', foodDetails);
 }
 
+// Food Search (for autocomplete)
+export async function searchFoods(query: string, maxResults: number = 10) {
+  try {
+    // Don't require auth for food search
+    const url = buildUrl(`/foods/search?query=${encodeURIComponent(query)}&max_results=${maxResults}`);
+    console.log('🔗 Search URL:', url);
+    
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      }
+    });
+    
+    console.log('📡 Search response status:', res.status);
+    
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error('❌ Search API error:', errorText);
+      throw new Error(`Search failed: ${res.status} ${errorText}`);
+    }
+    
+    const data = await handle(res);
+    console.log('✅ Search API response received:', data);
+    console.log('📊 Response structure:', {
+      hasFoods: !!data.foods,
+      foodsIsArray: Array.isArray(data.foods),
+      foodsLength: data.foods?.length,
+      totalResults: data.total_results
+    });
+    return data;
+  } catch (error) {
+    console.error('❌ searchFoods error:', error);
+    throw error;
+  }
+}
+
 // History
 export async function getHistory() { return apiGet('/users/history'); }
 export async function addHistory(entry: any) { return apiPost('/users/history', entry); }
 export async function deleteHistoryEntry(id: string) { return apiDelete(`/users/history/${id}`); }
 export async function clearHistory() { return apiDelete('/users/history'); }
+
+
+
+
 
 
 

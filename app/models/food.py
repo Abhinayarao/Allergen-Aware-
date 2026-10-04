@@ -51,6 +51,7 @@ class BarcodeScanRequest(BaseModel):
 class VoiceInputRequest(BaseModel):
     text: Optional[str] = None
     audio_base64: Optional[str] = None
+    audio_mime_type: Optional[str] = None
 
 class ScanResponse(BaseModel):
     success: bool

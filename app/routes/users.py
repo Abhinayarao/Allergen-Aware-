@@ -1,22 +1,21 @@
 from fastapi import APIRouter, HTTPException, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-import requests
+import httpx
 from firebase_admin import exceptions as firebase_exceptions
 from google.cloud import firestore as g_firestore
 
 from ..firebase import get_firestore_client, get_firebase_auth, get_firebase_api_key
 from ..models.user import UserCreate, UserLogin, UserProfileUpdate
 from ..models.allergen import AllergenProfile, AllergenProfileUpdate
+from ..dependencies import get_current_user_id
 
 
 router = APIRouter()
-security = HTTPBearer()
 
 
-def _sign_in_with_password(email: str, password: str) -> Dict[str, Any]:
+async def _sign_in_with_password(email: str, password: str) -> Dict[str, Any]:
     api_key = get_firebase_api_key()
     url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={api_key}"
     payload = {
@@ -25,7 +24,8 @@ def _sign_in_with_password(email: str, password: str) -> Dict[str, Any]:
         "returnSecureToken": True,
     }
 
-    response = requests.post(url, json=payload, timeout=10)
+    async with httpx.AsyncClient(timeout=10) as client:
+        response = await client.post(url, json=payload)
 
     if response.status_code != 200:
         try:
@@ -71,20 +71,6 @@ def _build_profile_response(profile: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
-    """Verify Firebase ID token and return the UID."""
-    token = credentials.credentials
-    try:
-        auth_client = get_firebase_auth()
-        decoded = auth_client.verify_id_token(token)
-        user_id = decoded.get("uid")
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        return user_id
-    except (firebase_exceptions.FirebaseError, ValueError) as exc:
-        raise HTTPException(status_code=401, detail="Invalid token") from exc
-
-
 @router.post("/register", response_model=dict)
 async def register(user_data: UserCreate):
     """Register a new user using Firebase Auth and initialise profile."""
@@ -102,7 +88,7 @@ async def register(user_data: UserCreate):
         )
 
         profile_ref = db.collection("user_profiles").document(user.uid)
-        timestamp = datetime.utcnow()
+        timestamp = datetime.now(timezone.utc)
         profile_ref.set(
             {
                 "user_id": user.uid,
@@ -127,7 +113,7 @@ async def register(user_data: UserCreate):
 @router.post("/login", response_model=dict)
 async def login(login_data: UserLogin):
     """Login user using Firebase Identity Toolkit password verification."""
-    tokens = _sign_in_with_password(login_data.email, login_data.password)
+    tokens = await _sign_in_with_password(login_data.email, login_data.password)
     if not tokens.get("access_token"):
         raise HTTPException(status_code=401, detail="Login failed")
     return tokens
@@ -147,7 +133,7 @@ async def get_profile(user_id: str = Depends(get_current_user_id)):
             profile = snapshot.to_dict() or {}
         else:
             user_record = auth_client.get_user(user_id)
-            timestamp = datetime.utcnow()
+            timestamp = datetime.now(timezone.utc)
             profile = {
                 "user_id": user_id,
                 "email": user_record.email,
@@ -178,7 +164,7 @@ async def update_profile(
             update_data["last_name"] = name_parts[1] if len(name_parts) > 1 else None
             update_data.pop("name", None)
 
-        update_data["updated_at"] = datetime.utcnow()
+        update_data["updated_at"] = datetime.now(timezone.utc)
 
         profile_ref = db.collection("user_profiles").document(user_id)
         profile_ref.set(update_data, merge=True)
@@ -202,7 +188,7 @@ async def get_allergen_profile(user_id: str = Depends(get_current_user_id)):
         if snapshot.exists:
             data = snapshot.to_dict() or {}
         else:
-            timestamp = datetime.utcnow()
+            timestamp = datetime.now(timezone.utc)
             data = {
                 "user_id": user_id,
                 "created_at": timestamp,
@@ -225,7 +211,8 @@ async def update_allergen_profile(
 
     try:
         update_data = allergen_update.dict(exclude_unset=True)
-        update_data["updated_at"] = datetime.utcnow()
+        update_data["user_id"] = user_id
+        update_data["updated_at"] = datetime.now(timezone.utc)
 
         doc_ref = db.collection("allergen_profiles").document(user_id)
         doc_ref.set(update_data, merge=True)
@@ -290,7 +277,7 @@ async def add_history(
             "food_name": analysis.get("dishName", ""),
             "analysis_result": analysis,
             "scan_data": history_entry,
-            "created_at": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
         }
 
         doc_ref = db.collection("food_scans").document()
@@ -334,8 +321,11 @@ async def clear_history(user_id: str = Depends(get_current_user_id)):
     try:
         query = db.collection("food_scans").where("user_id", "==", user_id)
         docs = list(query.stream())
-        for doc in docs:
-            doc.reference.delete()
+        if docs:
+            batch = db.batch()
+            for doc in docs:
+                batch.delete(doc.reference)
+            batch.commit()
 
         return {"message": "History cleared successfully"}
     except firebase_exceptions.FirebaseError as exc:

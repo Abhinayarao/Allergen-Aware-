@@ -8,7 +8,7 @@ interface CameraScanPageProps {
   onCapture: (file: File) => void;
   onUpload: (file: File) => void;
   onBarcode: (barcode: string) => void;
-  onVoice?: (payload: { text?: string; audio_base64?: string }) => void;
+  onVoice?: (payload: { text?: string; audio_base64?: string; audio_mime_type?: string }) => void;
   onBack: () => void;
   isLoading: boolean;
 }
@@ -132,10 +132,12 @@ export function CameraScanPage({ onCapture, onUpload, onBarcode, onVoice, onBack
   const handleVoiceSubmit = async () => {
     if (!onVoice) return;
     let audio_base64: string | undefined = undefined;
+    let audio_mime_type: string | undefined = undefined;
     if (voiceFile) {
       audio_base64 = await fileToBase64(voiceFile);
+      audio_mime_type = voiceFile.type || 'audio/mp4';
     }
-    onVoice({ text: voiceText || undefined, audio_base64 });
+    onVoice({ text: voiceText || undefined, audio_base64, audio_mime_type });
     setShowVoiceSheet(false);
     setVoiceText('');
     setVoiceFile(null);

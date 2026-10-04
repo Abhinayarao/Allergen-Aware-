@@ -203,14 +203,11 @@ async def scan_voice(
     """Process voice input to identify food and analyze for allergens."""
     try:
         text = voice_data.text
-        
+
         if voice_data.audio_base64 and not text:
-            return ScanResponse(
-                success=False,
-                food_details=None,
-                error_message="Audio transcription is not yet supported. Please provide text input."
-            )
-        
+            mime_type = voice_data.audio_mime_type or "audio/mp4"
+            text = await gemini_service.transcribe_audio(voice_data.audio_base64, mime_type)
+
         if not text:
             return ScanResponse(
                 success=False,
